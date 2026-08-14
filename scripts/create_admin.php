@@ -1,0 +1,3 @@
+<?php
+declare(strict_types=1);
+if(PHP_SAPI!=='cli'){http_response_code(404);exit;}require __DIR__.'/../app/bootstrap.php';$email=$argv[1]??'';$name=$argv[2]??'Administrator';$password=$argv[3]??'';if(!filter_var($email,FILTER_VALIDATE_EMAIL)||strlen($password)<12){fwrite(STDERR,"Usage: php create_admin.php email name 'password-min-12'\n");exit(1);}$hash=password_hash($password,PASSWORD_DEFAULT);$st=$db->prepare("INSERT INTO users(email,password_hash,name,role)VALUES(?,?,?,'admin') ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash),name=VALUES(name),role='admin',is_active=1");$st->execute([strtolower($email),$hash,$name]);fwrite(STDOUT,"Admin ready: {$email}\n");

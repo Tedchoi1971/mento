@@ -1,13 +1,14 @@
 <?php
 declare(strict_types=1);
-header('Content-Type: application/json; charset=utf-8');
-header('X-Content-Type-Options: nosniff');
-$path=__DIR__.'/../config/config.php';
-if(!is_file($path)){http_response_code(503);echo json_encode(['error'=>'config/config.php가 필요합니다.']);exit;}
-$config=require $path;
-try{$db=new PDO($config['db']['dsn'],$config['db']['user'],$config['db']['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);}catch(Throwable $e){http_response_code(503);echo json_encode(['error'=>'데이터베이스 연결 실패']);exit;}
-$method=$_SERVER['REQUEST_METHOD'];$resource=basename(parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH));
-if($resource==='health'){echo json_encode(['ok'=>true]);exit;}
-if($resource==='companies'&&$method==='GET'){$q=$db->query('SELECT id,name,industry,ceo_name AS ceo,email,stage,updated_at FROM companies ORDER BY updated_at DESC');echo json_encode(['data'=>$q->fetchAll()],JSON_UNESCAPED_UNICODE);exit;}
-if($resource==='companies'&&$method==='POST'){$b=json_decode(file_get_contents('php://input'),true)?:[];if(empty(trim((string)($b['name']??'')))||empty(trim((string)($b['industry']??'')))){http_response_code(422);echo json_encode(['error'=>'기업명과 업종은 필수입니다.']);exit;}$s=$db->prepare('INSERT INTO companies(name,industry,ceo_name,email,memo,stage) VALUES(?,?,?,?,?,?)');$s->execute([$b['name'],$b['industry'],$b['ceo']??null,$b['email']??null,$b['memo']??null,$b['stage']??'자료 요청']);http_response_code(201);echo json_encode(['id'=>(int)$db->lastInsertId()]);exit;}
-http_response_code(404);echo json_encode(['error'=>'API를 찾을 수 없습니다.']);
+try{require __DIR__.'/../app/bootstrap.php';$method=$_SERVER['REQUEST_METHOD'];$uri=trim((string)parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH),'/');$pos=strpos($uri,'api/');$route=$pos===false?'':substr($uri,$pos+4);
+ if($route==='health'&&$method==='GET')jsonResponse(['ok'=>true,'version'=>'2.0']);
+ if($route==='session'&&$method==='GET')jsonResponse(['authenticated'=>!empty($_SESSION['user_id']),'csrf'=>$_SESSION['csrf'],'user'=>$_SESSION['user']??null]);
+ if($route==='login'&&$method==='POST'){$b=bodyJson();$st=$db->prepare('SELECT id,email,password_hash,name,role FROM users WHERE email=? AND is_active=1');$st->execute([strtolower(trim((string)($b['email']??'')))]);$u=$st->fetch();if(!$u||!password_verify((string)($b['password']??''),$u['password_hash']))jsonResponse(['error'=>'이메일 또는 비밀번호가 올바르지 않습니다.'],401);session_regenerate_id(true);$_SESSION['user_id']=(int)$u['id'];$_SESSION['user']=['email'=>$u['email'],'name'=>$u['name'],'role'=>$u['role']];$_SESSION['csrf']=bin2hex(random_bytes(32));$db->prepare('UPDATE users SET last_login_at=NOW() WHERE id=?')->execute([$u['id']]);audit($db,(int)$u['id'],'login');jsonResponse(['user'=>$_SESSION['user'],'csrf'=>$_SESSION['csrf']]);}
+ $userId=requireAuth();if($method!=='GET')requireCsrf();
+ if($route==='logout'&&$method==='POST'){audit($db,$userId,'logout');$_SESSION=[];session_destroy();jsonResponse(['ok'=>true]);}
+ if($route==='documents'&&$method==='GET'){$st=$db->query('SELECT id,company_id,grant_program_id,drive_file_id,drive_url,original_name,mime_type,file_size,analysis_status,analysis_version,analyzed_at,error_message,created_at FROM documents ORDER BY updated_at DESC LIMIT 200');jsonResponse(['data'=>$st->fetchAll()]);}
+ if($route==='documents'&&$method==='POST'){$b=bodyJson();$service=new DocumentAnalysisService($db,new GoogleDriveClient($config['google']),new OpenAIClient($config['openai']),(int)$config['security']['max_document_bytes']);$result=$service->register(trim((string)($b['drive_url']??'')),isset($b['company_id'])?(int)$b['company_id']:null,isset($b['grant_program_id'])?(int)$b['grant_program_id']:null,$userId);audit($db,$userId,'document.register','document',$result['id']);jsonResponse($result,201);}
+ if(preg_match('~^documents/(\d+)/analyze$~',$route,$m)&&$method==='POST'){$service=new DocumentAnalysisService($db,new GoogleDriveClient($config['google']),new OpenAIClient($config['openai']),(int)$config['security']['max_document_bytes']);$result=$service->analyze((int)$m[1]);audit($db,$userId,'document.analyze','document',(int)$m[1]);jsonResponse($result);}
+ if(preg_match('~^documents/(\d+)$~',$route,$m)&&$method==='GET'){$st=$db->prepare('SELECT * FROM documents WHERE id=?');$st->execute([(int)$m[1]]);$doc=$st->fetch();if(!$doc)jsonResponse(['error'=>'문서를 찾을 수 없습니다.'],404);$doc['analysis']=json_decode((string)$doc['analysis_json'],true);unset($doc['analysis_json']);jsonResponse(['data'=>$doc]);}
+ jsonResponse(['error'=>'API를 찾을 수 없습니다.'],404);
+}catch(InvalidArgumentException $e){if(function_exists('jsonResponse'))jsonResponse(['error'=>$e->getMessage()],422);http_response_code(422);header('Content-Type: application/json');echo json_encode(['error'=>$e->getMessage()]);}catch(Throwable $e){error_log($e->__toString());if(function_exists('jsonResponse'))jsonResponse(['error'=>'요청 처리 중 오류가 발생했습니다.'],500);http_response_code(500);header('Content-Type: application/json');echo json_encode(['error'=>'서비스 설정을 확인해 주세요.']);}

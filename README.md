@@ -1,6 +1,6 @@
 # Compass — 기업 성장 진단 MVP
 
-공유 대화의 요구사항을 바탕으로 구현한 PHP 7.4 + MariaDB 10.0 서비스 골격과 실행형 UI입니다. MariaDB 10.0에는 네이티브 JSON 타입이 없으므로 구조화 데이터 컬럼은 UTF-8 `LONGTEXT`로 저장합니다.
+공유 대화의 요구사항을 바탕으로 구현한 PHP 7.4 + MariaDB 10.0 서비스입니다. Google Drive를 원본 저장소로 사용하며 분석 중에만 제한된 임시 파일을 만들고 완료·실패 시 삭제합니다. MariaDB 10.0에는 네이티브 JSON 타입이 없으므로 구조화 데이터 컬럼은 UTF-8 `LONGTEXT`로 저장합니다.
 
 ## 구현 범위
 
@@ -22,8 +22,10 @@
 
 1. phpMyAdmin에서 `database/schema.sql`을 실행합니다.
 2. `config/config.example.php`를 `config/config.php`로 복사합니다.
-3. `config.php`의 MariaDB 계정정보를 입력합니다.
-4. 이 폴더 전체를 웹 루트에 업로드하고 Apache rewrite를 활성화합니다.
-5. AI 기능을 붙일 때 서버 환경변수 `OPENAI_API_KEY`를 설정합니다. 키를 JS나 Git에 넣지 마세요.
+3. DB, OpenAI, Google OAuth 환경변수를 입력합니다.
+4. `php scripts/create_admin.php ted@mita.ne.kr '관리자명' '12자 이상 비밀번호'`로 관리자를 만듭니다.
+5. 이 폴더 전체를 웹 루트에 업로드하고 Apache rewrite를 활성화합니다.
+
+필수 환경변수: `APP_URL`, `DB_DSN`, `DB_USER`, `DB_PASSWORD`, `OPENAI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`. 비밀값은 JavaScript, Git 또는 웹에서 접근 가능한 파일에 넣지 마세요.
 
 현재 UI는 실제 업무 흐름을 검증하는 1차 MVP입니다. 다음 구현 우선순위는 문서 업로드 → 텍스트 추출 → 구조화된 AI 분석 → 규칙 기반 점수 계산 → PDF 보고서 생성입니다.
